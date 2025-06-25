@@ -1,0 +1,10 @@
+[package]
+name = "linux-command"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[[bin]]
+name = "cat"
+path = "src/cat.rs"
