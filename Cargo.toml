@@ -7,6 +7,11 @@ edition = "2024"
 name = "cat"
 path = "src/cat/main.rs"
 
+[[bin]]
+name = "touch"
+path = "src/touch/main.rs"
+
 [dependencies]
 anyhow = "1.0.98"
 clap = { version = "4.5.40", features = ["derive"] }
+filetime = "0.2.25"
