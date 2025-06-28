@@ -1,10 +1,11 @@
+use anyhow::Result;
 use clap::Parser;
 
 mod args;
 use args::Args;
 
-fn main() {
+fn main() -> Result<()> {
     let args = Args::parse();
 
-    args.touch_files();
+    args.touch_files()
 }
