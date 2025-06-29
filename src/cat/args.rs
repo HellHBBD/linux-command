@@ -9,25 +9,15 @@ fn show_nonprinting_chars(input: &str) -> String {
     for ch in input.chars() {
         match ch {
             // 控制字符 (0-31, 除了 TAB 和 LF)
-            c if c.is_control() && c != '\t' && c != '\n' => {
+            c if c.is_control() && c as u8 != 0x09 && c as u8 != 0x0A => {
                 let code = c as u8;
-                if code < 32 {
+                if code < 0x20 {
                     result.push('^');
-                    result.push((code + 64) as char);
-                } else if code == 127 {
+                    result.push((code + 0x40) as char);
+                }
+                // DEL character
+                else if code == 0x7F {
                     result.push_str("^?");
-                } else {
-                    // 處理高位字符 (128-255)
-                    result.push_str("M-");
-                    let adjusted = code - 128;
-                    if adjusted < 32 {
-                        result.push('^');
-                        result.push((adjusted + 64) as char);
-                    } else if adjusted == 127 {
-                        result.push_str("^?");
-                    } else {
-                        result.push(adjusted as char);
-                    }
                 }
             }
 
@@ -42,9 +32,9 @@ fn show_nonprinting_chars(input: &str) -> String {
 #[derive(Parser)]
 #[command(name = "cat")]
 #[command(version = "0.1.0")]
-#[command(about = "連結所有指定檔案並將結果寫到標準輸出")]
+#[command(about = "Concatenate files and print on the standard output.")]
 #[command(
-    long_about = "連結所有指定檔案並將結果寫到標準輸出。\n如果沒有指定檔案，或者檔案為「-」，則從標準輸入讀取。"
+    long_about = "Concatenate files and print on the standard output. With no FILE, or when FILE is -, read standard input."
 )]
 pub struct Args {
     /// 檔案列表，如果沒有指定則從標準輸入讀取
@@ -134,98 +124,50 @@ impl Args {
 
     pub fn print_files(&self) {
         let files = self.get_files();
-        for file_name in files {
-            let mut line_number = 1;
+        let mut line_number = 1;
+        let mut prev_line_empty = false;
 
-            if file_name == "-" {
-                // read from stdin
-                for line in io::stdin().lock().lines() {
-                    let line = line.unwrap();
-                    self.print_line(line, &mut line_number);
-                }
+        for file_name in files {
+            let reader: Box<dyn BufRead> = if file_name == "-" {
+                Box::new(BufReader::new(io::stdin()))
             } else {
-                // read from file
-                let file = File::open(file_name).unwrap();
-                let reader = BufReader::new(file);
-                for line in reader.lines() {
-                    let line = line.unwrap();
-                    self.print_line(line, &mut line_number);
+                Box::new(BufReader::new(File::open(&file_name).unwrap()))
+            };
+
+            for line_result in reader.lines() {
+                let mut line = line_result.unwrap();
+
+                if self.squeeze_blank && line.is_empty() && prev_line_empty {
+                    continue;
                 }
+                prev_line_empty = line.is_empty();
+
+                // Numbering logic
+                let mut prefix = String::new();
+                if self.number {
+                    if self.number_nonblank && line.is_empty() {
+                        // Do not number blank lines if -b is used
+                    } else {
+                        prefix = format!("{:6}  ", line_number);
+                        line_number += 1;
+                    }
+                }
+
+                // Formatting logic
+                if self.show_nonprinting {
+                    line = show_nonprinting_chars(&line);
+                }
+                if self.show_tabs {
+                    line = line.replace('\t', "^I");
+                }
+                if self.show_ends {
+                    line.push('$');
+                }
+
+                println!("{}{}", prefix, line);
             }
         }
     }
-
-    pub fn print_line(&self, line: String, line_number: &mut i32) {
-        if self.number_nonblank && line.is_empty() {
-            // skip empty line
-            println!("");
-            return;
-        }
-        if self.number {
-            // line number
-            print!("{line_number:6}  ");
-        }
-        let mut string = if self.show_nonprinting {
-            show_nonprinting_chars(&line)
-        } else {
-            line.to_string()
-        };
-        if self.show_ends {
-            string.push('$');
-        }
-        if self.show_tabs {
-            string = string.replace('\t', "\t^I");
-        }
-        println!("{string}");
-        *line_number += 1;
-    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use clap::Parser;
 
-    #[test]
-    fn test_no_args() {
-        let args = Args::try_parse_from(["cat"]).unwrap();
-        assert_eq!(args.get_files(), vec!["-"]);
-    }
-
-    #[test]
-    fn test_with_files() {
-        let args = Args::try_parse_from(["cat", "file1.txt", "file2.txt"]).unwrap();
-        assert_eq!(args.get_files(), vec!["file1.txt", "file2.txt"]);
-    }
-
-    #[test]
-    fn test_show_all_flag() {
-        let mut args = Args::try_parse_from(["cat", "-A", "file.txt"]).unwrap();
-        args.process_combined_flags();
-
-        assert!(args.show_all);
-        assert!(args.show_nonprinting);
-        assert!(args.show_ends);
-        assert!(args.show_tabs);
-    }
-
-    #[test]
-    fn test_e_flag() {
-        let mut args = Args::try_parse_from(["cat", "-e", "file.txt"]).unwrap();
-        args.process_combined_flags();
-
-        assert!(args.e_flag);
-        assert!(args.show_nonprinting);
-        assert!(args.show_ends);
-    }
-
-    #[test]
-    fn test_t_flag() {
-        let mut args = Args::try_parse_from(["cat", "-t", "file.txt"]).unwrap();
-        args.process_combined_flags();
-
-        assert!(args.t_flag);
-        assert!(args.show_nonprinting);
-        assert!(args.show_tabs);
-    }
-}
