@@ -9,5 +9,5 @@ fn main() {
     // 處理複合選項
     args.process_combined_flags();
 
-    args.print_files();
+    print!("{}", args.print_files());
 }

@@ -92,6 +92,11 @@ impl Args {
             self.show_tabs = true;
         }
 
+        // -b 會覆蓋 -n
+        if self.number_nonblank {
+            self.number = true;
+        }
+
         // -e 等效於 -vE
         if self.e_flag {
             self.show_nonprinting = true;
@@ -104,9 +109,11 @@ impl Args {
             self.show_tabs = true;
         }
 
-        // -b 會覆蓋 -n
-        if self.number_nonblank {
-            self.number = true;
+        // If -e or -t are present, numbering should be explicitly off.
+        // This must be after all other flag processing to ensure it overrides.
+        if self.e_flag || self.t_flag {
+            self.number = false;
+            self.number_nonblank = false;
         }
     }
 
@@ -122,10 +129,11 @@ impl Args {
         }
     }
 
-    pub fn print_files(&self) {
+    pub fn print_files(&self) -> String {
         let files = self.get_files();
         let mut line_number = 1;
         let mut prev_line_empty = false;
+        let mut output = String::new();
 
         for file_name in files {
             let reader: Box<dyn BufRead> = if file_name == "-" {
@@ -136,6 +144,11 @@ impl Args {
 
             for line_result in reader.lines() {
                 let mut line = line_result.unwrap();
+
+                // Trim carriage return if present (Windows specific)
+                if line.ends_with('\r') {
+                    line.pop();
+                }
 
                 if self.squeeze_blank && line.is_empty() && prev_line_empty {
                     continue;
@@ -164,10 +177,9 @@ impl Args {
                     line.push('$');
                 }
 
-                println!("{}{}", prefix, line);
+                output.push_str(&format!("{}{}\n", prefix, line));
             }
         }
+        output
     }
 }
-
-
